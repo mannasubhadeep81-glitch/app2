@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Neon Rush — Racing Game</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#05070d;font-family:Arial,sans-serif;touch-action:none}
+#game{display:block;width:100%;height:100%;background:#070a12}
+#hud{position:fixed;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;gap:8px;color:#fff;z-index:3;pointer-events:none}
+.panel{background:rgba(5,8,18,.72);border:1px solid rgba(0,229,255,.35);border-radius:14px;padding:8px 12px;backdrop-filter:blur(8px);box-shadow:0 0 18px rgba(0,229,255,.12)}
+.big{font-weight:800;font-size:18px}.small{font-size:11px;opacity:.7}
+#nitroWrap{position:fixed;left:50%;bottom:105px;transform:translateX(-50%);width:min(330px,70vw);height:10px;background:#172033;border-radius:10px;overflow:hidden;border:1px solid #30405e;z-index:4}
+#nitro{height:100%;width:100%;background:linear-gradient(90deg,#00e5ff,#8b5cff,#ff2bd6);box-shadow:0 0 14px #00e5ff}
+#controls{position:fixed;left:0;right:0;bottom:18px;display:flex;justify-content:space-between;padding:0 18px;z-index:4;pointer-events:none}
+.btn{pointer-events:auto;width:76px;height:76px;border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(14,18,32,.78);color:white;font-size:27px;font-weight:bold;box-shadow:0 8px 30px #0008;user-select:none}
+.btn:active{transform:scale(.94);background:#17233c}
+#nitroBtn{width:92px;border-radius:22px;font-size:14px;color:#70f5ff}
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#18254dcc,#02040bcc);z-index:10;color:white}
+.card{width:min(420px,88vw);padding:28px;border-radius:24px;text-align:center;background:rgba(9,13,26,.88);border:1px solid #00e5ff55;box-shadow:0 0 55px #00e5ff22}
+h1{margin:0 0 8px;font-size:38px;letter-spacing:2px;background:linear-gradient(90deg,#00e5ff,#b05cff,#ff3fba);-webkit-background-clip:text;color:transparent}
+p{color:#b9c5d9;line-height:1.5}
+#start{border:0;border-radius:14px;padding:14px 28px;font-size:17px;font-weight:800;color:#041016;background:linear-gradient(90deg,#00e5ff,#8b5cff);box-shadow:0 0 25px #00e5ff55}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+ <div class="panel"><div class="small">SCORE</div><div class="big" id="score">0</div></div>
+ <div class="panel"><div class="small">SPEED</div><div class="big"><span id="speed">0</span> KM/H</div></div>
+ <div class="panel"><div class="small">BEST</div><div class="big" id="best">0</div></div>
+</div>
+<div id="nitroWrap"><div id="nitro"></div></div>
+<div id="controls">
+ <button class="btn" id="left">‹</button>
+ <button class="btn" id="nitroBtn">NITRO</button>
+ <button class="btn" id="right">›</button>
+</div>
+<div id="overlay">
+ <div class="card">
+  <h1>NEON RUSH</h1>
+  <p>Race through the neon highway. Dodge traffic, collect score and use <b>NITRO</b> to push your speed.</p>
+  <p class="small">Mobile: hold ◀ ▶ &nbsp; • &nbsp; Keyboard: A/D or ←/→ &nbsp; • &nbsp; Space = Nitro</p>
+  <button id="start">START RACE</button>
+ </div>
+</div>
+<script>
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+let W,H,dpr,roadX,roadW,laneW,player,traffic=[],particles=[],score=0,best=+localStorage.neonBest||0;
+let running=false,last=0,spawn=0,speed=420,nitro=100,nitroOn=false,keys={left:false,right:false};
+document.getElementById('best').textContent=best;
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;c.style.width=W+'px';c.style.height=H+'px';ctx.setTransform(dpr,0,0,dpr,0,0);roadW=Math.min(W*.72,520);roadX=(W-roadW)/2;laneW=roadW/3;if(!player)player={x:W/2,y:H*.78,w:34,h:58,lane:1};else player.y=H*.78}
+addEventListener('resize',resize);resize();
+
+function road(){ctx.fillStyle='#08110e';ctx.fillRect(0,0,W,H);
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#18251f');g.addColorStop(1,'#06100c');ctx.fillStyle=g;ctx.fillRect(roadX,0,roadW,H);
+ ctx.fillStyle='#00d9ff';ctx.globalAlpha=.35;ctx.fillRect(roadX,0,4,H);ctx.fillRect(roadX+roadW-4,0,4,H);ctx.globalAlpha=1;
+ let off=(performance.now()/1000*speed)%80;
+ ctx.strokeStyle='#e7fbff';ctx.lineWidth=5;ctx.setLineDash([32,48]);ctx.lineDashOffset=off;
+ for(let i=1;i<3;i++){ctx.beginPath();ctx.moveTo(roadX+laneW*i,0);ctx.lineTo(roadX+laneW*i,H);ctx.stroke()}ctx.setLineDash([]);
+ for(let y=-40+off;y<H;y+=80){ctx.fillStyle='#0b3b31';ctx.fillRect(roadX-26,y,8,28);ctx.fillRect(roadX+roadW+18,y,8,28)}
+}
+function car(x,y,w,h,color,enemy=false){ctx.save();ctx.translate(x,y);
+ ctx.shadowBlur=18;ctx.shadowColor=color;ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(-w/2,-h/2,w,h,9);ctx.fill();
+ ctx.shadowBlur=0;ctx.fillStyle='#0b1020';ctx.beginPath();ctx.roundRect(-w*.32,-h*.29,w*.64,h*.28,5);ctx.fill();
+ ctx.fillStyle='#111827';ctx.fillRect(-w*.43,h*.18,w*.86,8);
+ ctx.fillStyle=enemy?'#ff375f':'#00e5ff';ctx.fillRect(-w*.42,-h*.45,w*.84,4);
+ ctx.fillStyle='#05070d';ctx.fillRect(-w/2-3,-h*.22,6,16);ctx.fillRect(w/2-3,-h*.22,6,16);
+ ctx.restore()
+}
+function burst(x,y,color){for(let i=0;i<18;i++)particles.push({x,y,vx:(Math.random()-.5)*260,vy:(Math.random()-.5)*260,life:.5+Math.random()*.5,color})}
+function spawnCar(){let lane=Math.floor(Math.random()*3);traffic.push({x:roadX+laneW*(lane+.5),y:-80,w:34,h:58,color:['#ff356d','#ffb52e','#8b5cff'][Math.floor(Math.random()*3)],vy:speed*(.72+Math.random()*.25)})}
+function collide(a,b){return Math.abs(a.x-b.x)<(a.w+b.w)*.42&&Math.abs(a.y-b.y)<(a.h+b.h)*.43}
+function update(dt){
+ let steer=(keys.right?1:0)-(keys.left?1:0);player.x+=steer*430*dt;
+ player.x=Math.max(roadX+laneW*.18,Math.min(roadX+roadW-laneW*.18,player.x));
+ let boost=nitroOn&&nitro>0;if(boost){nitro-=34*dt;speed=Math.min(820,speed+700*dt)}else{nitro=Math.min(100,nitro+8*dt);speed+=((430+Math.min(score/5,190))-speed)*dt}
+ spawn-=dt;if(spawn<=0){spawnCar();spawn=Math.max(.35,1.05-score/1800)}
+ traffic.forEach(o=>o.y+=(o.vy+(boost?120:0))*dt);traffic=traffic.filter(o=>o.y<H+100);
+ for(const o of traffic)if(collide(player,o)){running=false;burst(player.x,player.y,'#ff315d');endGame();return}
+ score+=dt*speed/8;
+ particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt});particles=particles.filter(p=>p.life>0);
+ document.getElementById('score').textContent=Math.floor(score);
+ document.getElementById('speed').textContent=Math.floor(speed/5);
+ document.getElementById('nitro').style.width=nitro+'%';
+}
+function draw(){
+ road();traffic.forEach(o=>car(o.x,o.y,o.w,o.h,o.color,true));
+ if(nitroOn){ctx.globalAlpha=.7;for(let i=0;i<4;i++){ctx.fillStyle=['#00e5ff','#8b5cff','#ff2bd6'][i%3];ctx.fillRect(player.x-10+i*6,player.y+player.h/2,3,35+Math.random()*25)}ctx.globalAlpha=1}
+ car(player.x,player.y,player.w,player.h,'#00e5ff');
+ particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life*2);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,4,4)});ctx.globalAlpha=1;
+}
+function loop(t){if(!running)return;let dt=Math.min((t-last)/1000,.033);last=t;update(dt);draw();requestAnimationFrame(loop)}
+function start(){score=0;speed=420;nitro=100;traffic=[];particles=[];player.x=W/2;running=true;document.getElementById('overlay').classList.add('hidden');last=performance.now();requestAnimationFrame(loop)}
+function endGame(){if(score>best){best=Math.floor(score);localStorage.neonBest=best;document.getElementById('best').textContent=best}
+ setTimeout(()=>{document.querySelector('#overlay h1').textContent='CRASH!';document.querySelector('#overlay p').innerHTML='Score: <b>'+Math.floor(score)+'</b><br>Tap below to race again.';document.getElementById('start').textContent='RACE AGAIN';document.getElementById('overlay').classList.remove('hidden')},450)}
+function bind(id,key){let b=document.getElementById(id);b.addEventListener('pointerdown',e=>{e.preventDefault();keys[key]=true});['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,e=>{keys[key]=false}))}
+bind('left','left');bind('right','right');
+let nb=document.getElementById('nitroBtn');nb.addEventListener('pointerdown',()=>nitroOn=true);['pointerup','pointercancel','pointerleave'].forEach(e=>nb.addEventListener(e,()=>nitroOn=false));
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a')keys.left=true;if(e.key==='ArrowRight'||e.key.toLowerCase()==='d')keys.right=true;if(e.code==='Space')nitroOn=true;if(e.code==='Enter'&&!running)start()});
+addEventListener('keyup',e=>{if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a')keys.left=false;if(e.key==='ArrowRight'||e.key.toLowerCase()==='d')keys.right=false;if(e.code==='Space')nitroOn=false});
+document.getElementById('start').onclick=start;
+draw();
+</script>
+</body>
+</html>
